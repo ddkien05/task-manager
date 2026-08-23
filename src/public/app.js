@@ -61,6 +61,8 @@ function debounce(fn, ms) {
 async function checkHealth() {
   const dot = document.getElementById('dockerDot');
   const label = document.getElementById('dockerStatus');
+  const dotM = document.getElementById('dockerDotMobile');
+  const labelM = document.getElementById('dockerStatusMobile');
   try {
     const res = await fetch('/api/health');
     const data = await res.json();
@@ -68,10 +70,16 @@ async function checkHealth() {
     dot.className = 'w-2 h-2 rounded-full shrink-0 ' + (ok ? 'bg-low' : 'bg-high');
     label.textContent = ok ? 'Running' : 'Disconnected';
     label.className = 'text-xs font-semibold ' + (ok ? 'text-low' : 'text-high');
+    dotM.className = 'w-2 h-2 rounded-full shrink-0 ' + (ok ? 'bg-low' : 'bg-high');
+    labelM.textContent = ok ? 'Running' : 'Disconnected';
+    labelM.className = 'text-xs font-semibold whitespace-nowrap ' + (ok ? 'text-low' : 'text-high');
   } catch {
     dot.className = 'w-2 h-2 rounded-full shrink-0 bg-high';
     label.textContent = 'Không kết nối';
     label.className = 'text-xs font-semibold text-high';
+    dotM.className = 'w-2 h-2 rounded-full shrink-0 bg-high';
+    labelM.textContent = 'Không kết nối';
+    labelM.className = 'text-xs font-semibold whitespace-nowrap text-high';
   }
 }
 
@@ -210,19 +218,19 @@ function renderTasks(tasks) {
 function renderRow(task) {
   const meta = priorityMeta[task.priority] || priorityMeta.medium;
   const row = document.createElement('div');
-  row.className = 'flex items-center gap-3 py-3 fade-in';
+  row.className = 'flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-3 fade-in';
 
   row.innerHTML = `
     <button class="toggleBtn w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors"
       style="border-color:${task.completed ? '#22B07D' : '#C7D3E6'}; ${task.completed ? 'background:#22B07D' : ''}">
       ${task.completed ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>' : ''}
     </button>
-    <div class="flex-1 min-w-0">
+    <div class="flex-1 min-w-[140px]">
       <p class="text-sm font-medium truncate ${task.completed ? 'line-through text-muted' : ''}">${escapeHtml(task.title)}</p>
       ${task.description ? `<p class="text-xs text-muted truncate">${escapeHtml(task.description)}</p>` : ''}
     </div>
-    <span class="text-[11px] font-semibold text-white px-2.5 py-1 rounded-full shrink-0" style="background:${meta.bg}">${meta.label}</span>
-    <div class="flex items-center gap-1 shrink-0">
+    <div class="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
+      <span class="text-[11px] font-semibold text-white px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap" style="background:${meta.bg}">${meta.label}</span>
       <button class="editBtn text-muted hover:text-primary p-1.5">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
       </button>
