@@ -83,6 +83,68 @@ async function checkHealth() {
   }
 }
 
+// ---------- Detail modal ----------
+const detailBackdrop = document.getElementById('detailBackdrop');
+let detailTask = null;
+
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('vi-VN', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+}
+function formatDate(iso) {
+  if (!iso) return 'Không đặt';
+  return new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function openDetail(task) {
+  detailTask = task;
+  const meta = priorityMeta[task.priority] || priorityMeta.medium;
+
+  document.getElementById('detailTitle').textContent = task.title;
+  document.getElementById('detailDesc').textContent = task.description || 'Không có mô tả.';
+  document.getElementById('detailPriority').textContent = meta.label;
+  document.getElementById('detailPriority').style.background = meta.bg;
+  document.getElementById('detailDue').textContent = formatDate(task.dueDate);
+  document.getElementById('detailCreated').textContent = formatDateTime(task.createdAt);
+  document.getElementById('detailUpdated').textContent = formatDateTime(task.updatedAt);
+  document.getElementById('detailId').textContent = task._id;
+
+  const statusEl = document.getElementById('detailStatus');
+  if (task.completed) {
+    statusEl.textContent = 'Hoàn thành';
+    statusEl.style.background = '#D9F2E6';
+    statusEl.style.color = '#22B07D';
+  } else {
+    statusEl.textContent = 'Đang làm';
+    statusEl.style.background = '#FDEBD0';
+    statusEl.style.color = '#F5A524';
+  }
+
+  detailBackdrop.classList.remove('hidden');
+  detailBackdrop.classList.add('flex');
+}
+function closeDetail() {
+  detailBackdrop.classList.add('hidden');
+  detailBackdrop.classList.remove('flex');
+  detailTask = null;
+}
+document.getElementById('closeDetail').addEventListener('click', closeDetail);
+detailBackdrop.addEventListener('click', e => { if (e.target === detailBackdrop) closeDetail(); });
+document.getElementById('detailEditBtn').addEventListener('click', () => {
+  const task = detailTask;
+  closeDetail();
+  openModal(task);
+});
+document.getElementById('detailDeleteBtn').addEventListener('click', async () => {
+  if (!detailTask) return;
+  if (!confirm('Xóa công việc này?')) return;
+  await fetch(`${API}/${detailTask._id}`, { method: 'DELETE' });
+  closeDetail();
+  loadTasks();
+});
+
 // ---------- Modal ----------
 const backdrop = document.getElementById('modalBackdrop');
 const form = document.getElementById('taskForm');
@@ -218,7 +280,7 @@ function renderTasks(tasks) {
 function renderRow(task) {
   const meta = priorityMeta[task.priority] || priorityMeta.medium;
   const row = document.createElement('div');
-  row.className = 'flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-3 fade-in';
+  row.className = 'flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-3 fade-in cursor-pointer hover:bg-canvas/60 rounded-lg px-1 -mx-1 transition-colors';
 
   row.innerHTML = `
     <button class="toggleBtn w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors"
@@ -240,9 +302,10 @@ function renderRow(task) {
     </div>
   `;
 
-  row.querySelector('.toggleBtn').addEventListener('click', () => toggleTask(task._id));
-  row.querySelector('.editBtn').addEventListener('click', () => openModal(task));
-  row.querySelector('.deleteBtn').addEventListener('click', () => deleteTask(task._id));
+  row.querySelector('.toggleBtn').addEventListener('click', e => { e.stopPropagation(); toggleTask(task._id); });
+  row.querySelector('.editBtn').addEventListener('click', e => { e.stopPropagation(); openModal(task); });
+  row.querySelector('.deleteBtn').addEventListener('click', e => { e.stopPropagation(); deleteTask(task._id); });
+  row.addEventListener('click', () => openDetail(task));
 
   return row;
 }
