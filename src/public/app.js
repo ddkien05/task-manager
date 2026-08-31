@@ -13,6 +13,23 @@ const priorityMeta = {
   medium: { label: 'Medium', bg: '#F5A524' },
   high:   { label: 'High',   bg: '#EF4B4B' }
 };
+const priorityRank = { low: 1, medium: 2, high: 3 };
+
+// ---------- Theme (dark/light) ----------
+function applyTheme(mode) {
+  document.documentElement.classList.toggle('dark', mode === 'dark');
+  document.querySelectorAll('.icon-sun').forEach(el => el.classList.toggle('hidden', mode === 'dark'));
+  document.querySelectorAll('.icon-moon').forEach(el => el.classList.toggle('hidden', mode !== 'dark'));
+  localStorage.setItem('theme', mode);
+}
+const savedTheme = localStorage.getItem('theme') ||
+  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+applyTheme(savedTheme);
+document.querySelectorAll('.themeToggleBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    applyTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark');
+  });
+});
 
 // ---------- Toast notifications ----------
 const toastContainer = document.getElementById('toastContainer');
@@ -186,17 +203,77 @@ document.getElementById('detailDeleteBtn').addEventListener('click', () => {
   deleteTask(id);
 });
 
+// ---------- Day detail modal (bấm vào 1 ngày trong lịch) ----------
+const dayBackdrop = document.getElementById('dayBackdrop');
+let dayModalDate = null;
+
+function openDayModal(dateObj, tasksOnDay) {
+  dayModalDate = dateObj;
+  const label = dateObj.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+  document.getElementById('dayModalTitle').textContent = label.charAt(0).toUpperCase() + label.slice(1);
+
+  const sorted = [...tasksOnDay].sort((a, b) => {
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    return (priorityRank[b.priority] || 0) - (priorityRank[a.priority] || 0);
+  });
+
+  const list = document.getElementById('dayTaskList');
+  const empty = document.getElementById('dayEmptyState');
+  if (!sorted.length) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+  } else {
+    empty.classList.add('hidden');
+    list.innerHTML = sorted.map(t => {
+      const meta = priorityMeta[t.priority] || priorityMeta.medium;
+      const overdue = isOverdue(t);
+      return `
+        <button data-id="${t._id}" class="dayTaskItem w-full flex items-center gap-2.5 text-left hover:bg-canvas rounded-lg px-2 py-2 -mx-2 transition-colors">
+          <span class="w-2 h-2 rounded-full shrink-0" style="background:${t.completed ? '#22B07D' : (overdue ? '#EF4B4B' : meta.bg)}"></span>
+          <span class="flex-1 min-w-0 text-sm truncate ${t.completed ? 'line-through text-muted' : ''}">${escapeHtml(t.title)}</span>
+          ${overdue && !t.completed ? '<span class="text-[10px] font-semibold text-white bg-high px-2 py-0.5 rounded-full shrink-0">Quá hạn</span>' : ''}
+          <span class="text-[11px] font-semibold text-white px-2 py-0.5 rounded-full shrink-0" style="background:${meta.bg}">${meta.label}</span>
+        </button>
+      `;
+    }).join('');
+    list.querySelectorAll('.dayTaskItem').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const task = sorted.find(t => t._id === btn.dataset.id);
+        if (task) { closeDayModal(); openDetail(task); }
+      });
+    });
+  }
+
+  dayBackdrop.classList.remove('hidden');
+  dayBackdrop.classList.add('flex');
+}
+function closeDayModal() {
+  dayBackdrop.classList.add('hidden');
+  dayBackdrop.classList.remove('flex');
+  dayModalDate = null;
+}
+document.getElementById('closeDayModal').addEventListener('click', closeDayModal);
+dayBackdrop.addEventListener('click', e => { if (e.target === dayBackdrop) closeDayModal(); });
+document.getElementById('dayAddBtn').addEventListener('click', () => {
+  if (!dayModalDate) return;
+  const y = dayModalDate.getFullYear();
+  const m = String(dayModalDate.getMonth() + 1).padStart(2, '0');
+  const d = String(dayModalDate.getDate()).padStart(2, '0');
+  closeDayModal();
+  openModal(null, `${y}-${m}-${d}`);
+});
+
 // ---------- Modal ----------
 const backdrop = document.getElementById('modalBackdrop');
 const form = document.getElementById('taskForm');
 
-function openModal(task = null) {
+function openModal(task = null, prefillDate = null) {
   state.editingId = task ? task._id : null;
   document.getElementById('modalTitle').textContent = task ? 'Sửa công việc' : 'Thêm công việc';
   document.getElementById('fTitle').value = task ? task.title : '';
   document.getElementById('fDesc').value = task ? task.description : '';
   document.getElementById('fPriority').value = task ? task.priority : 'medium';
-  document.getElementById('fDue').value = task && task.dueDate ? task.dueDate.substring(0, 10) : '';
+  document.getElementById('fDue').value = task && task.dueDate ? task.dueDate.substring(0, 10) : (prefillDate || '');
   backdrop.classList.remove('hidden');
   backdrop.classList.add('flex');
   document.getElementById('fTitle').focus();
@@ -332,17 +409,18 @@ function renderCalendarGrid(tasks) {
   const label = monthStart.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
   document.getElementById('calMonthLabel').textContent = label.charAt(0).toUpperCase() + label.slice(1);
 
-  // Map ngày -> trạng thái bận rộn nhất trong ngày đó (quá hạn > đang làm > hoàn thành)
-  const dayMap = {};
+  // Map ngày -> danh sách task đến hạn ngày đó + trạng thái bận rộn nhất
+  const dayTasksMap = {};
   tasks.forEach(t => {
     if (!t.dueDate) return;
     const d = new Date(t.dueDate);
     const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    const kind = t.completed ? 'done' : (isOverdue(t) ? 'overdue' : 'doing');
-    const rank = { done: 1, doing: 2, overdue: 3 };
-    if (!dayMap[key] || rank[kind] > rank[dayMap[key]]) dayMap[key] = kind;
+    if (!dayTasksMap[key]) dayTasksMap[key] = [];
+    dayTasksMap[key].push(t);
   });
+  const kindOf = t => t.completed ? 'done' : (isOverdue(t) ? 'overdue' : 'doing');
   const dotColor = { overdue: '#EF4B4B', doing: '#F5A524', done: '#22B07D' };
+  const rank = { done: 1, doing: 2, overdue: 3 };
 
   const today = startOfToday();
   const firstDow = (monthStart.getDay() + 6) % 7; // Thứ 2 = 0 ... Chủ nhật = 6
@@ -353,16 +431,29 @@ function renderCalendarGrid(tasks) {
   for (let day = 1; day <= daysInMonth; day++) {
     const cellDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
     const key = `${cellDate.getFullYear()}-${cellDate.getMonth()}-${cellDate.getDate()}`;
-    const kind = dayMap[key];
+    const dayTasks = dayTasksMap[key] || [];
+    let topKind = null;
+    dayTasks.forEach(t => {
+      const k = kindOf(t);
+      if (!topKind || rank[k] > rank[topKind]) topKind = k;
+    });
     const isToday = cellDate.getTime() === today.getTime();
     cells.push(`
-      <div class="relative flex items-center justify-center h-7 rounded-md ${isToday ? 'bg-primary text-white font-semibold' : 'text-ink'}">
+      <button type="button" data-key="${key}" class="calDay relative flex items-center justify-center h-7 rounded-md transition-colors ${isToday ? 'bg-primary text-white font-semibold' : 'text-ink hover:bg-canvas'}">
         ${day}
-        ${kind ? `<span class="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style="background:${isToday ? '#fff' : dotColor[kind]}"></span>` : ''}
-      </div>
+        ${topKind ? `<span class="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style="background:${isToday ? '#fff' : dotColor[topKind]}"></span>` : ''}
+      </button>
     `);
   }
   document.getElementById('calGrid').innerHTML = cells.join('');
+
+  document.querySelectorAll('.calDay').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [y, m, d] = btn.dataset.key.split('-').map(Number);
+      const cellDate = new Date(y, m, d);
+      openDayModal(cellDate, dayTasksMap[btn.dataset.key] || []);
+    });
+  });
 }
 
 function renderAgenda(tasks) {
