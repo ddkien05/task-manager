@@ -37,6 +37,10 @@
   .navItem.active svg { stroke: #fff; }
   .fade-in { animation: fadeIn .2s ease-out; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(3px);} to { opacity: 1; transform: translateY(0);} }
+  .toast-in { animation: toastIn .25s ease-out; }
+  .toast-out { animation: toastOut .2s ease-in forwards; }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(16px);} to { opacity: 1; transform: translateX(0);} }
+  @keyframes toastOut { from { opacity: 1; transform: translateX(0);} to { opacity: 0; transform: translateX(16px);} }
   ::-webkit-scrollbar { width: 7px; }
   ::-webkit-scrollbar-thumb { background: #C7D3E6; border-radius: 9999px; }
 </style>
@@ -105,7 +109,7 @@
       <span>Welcome! Dữ liệu được lưu bền vững nhờ Docker Volume (không cần đăng nhập).</span>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4 sm:gap-5">
+    <div class="grid grid-cols-1 lg:grid-cols-[220px_1fr_260px] gap-4 sm:gap-5">
 
       <!-- Stat cards -->
       <div id="statCards" class="grid grid-cols-1 xs:grid-cols-3 lg:grid-cols-1 gap-3 sm:gap-4"></div>
@@ -129,6 +133,34 @@
 
         <div id="taskList" class="divide-y divide-line"></div>
         <p id="emptyState" class="hidden text-center text-muted text-sm py-10">Chưa có công việc nào phù hợp.</p>
+      </div>
+
+      <!-- Calendar panel -->
+      <div id="calendarPanel" class="bg-white border border-line rounded-xl p-4 h-fit">
+        <div class="flex items-center justify-between mb-3">
+          <button id="calPrev" class="w-6 h-6 rounded-md flex items-center justify-center text-muted hover:bg-canvas transition-colors">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <p id="calMonthLabel" class="text-sm font-semibold"></p>
+          <button id="calNext" class="w-6 h-6 rounded-md flex items-center justify-center text-muted hover:bg-canvas transition-colors">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div class="grid grid-cols-7 gap-y-1 text-center text-[10px] font-medium text-muted mb-1">
+          <span>T2</span><span>T3</span><span>T4</span><span>T5</span><span>T6</span><span>T7</span><span>CN</span>
+        </div>
+        <div id="calGrid" class="grid grid-cols-7 gap-y-1 text-center text-xs"></div>
+
+        <div class="mt-4 pt-4 border-t border-line">
+          <p class="text-[11px] font-semibold text-high mb-2 flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-high"></span> Quá hạn
+          </p>
+          <div id="overdueList" class="space-y-1.5 mb-4"></div>
+          <p class="text-[11px] font-semibold text-primary mb-2 flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Sắp tới
+          </p>
+          <div id="upcomingList" class="space-y-1.5"></div>
+        </div>
       </div>
     </div>
   </main>
@@ -235,6 +267,9 @@
     </div>
   </div>
 </div>
+
+<!-- Toast notifications -->
+<div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end max-w-[90vw]"></div>
 
 <script src="/app.js"></script>
 </body>

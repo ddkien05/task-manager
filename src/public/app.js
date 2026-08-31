@@ -1,12 +1,54 @@
 const API = '/api/tasks';
 
-const state = { view: 'dashboard', priority: '', q: '', editingId: null };
+const state = { view: 'dashboard', priority: '', q: '', editingId: null, calMonth: startOfMonth(new Date()) };
+
+function startOfMonth(d) {
+  const m = new Date(d.getFullYear(), d.getMonth(), 1);
+  m.setHours(0, 0, 0, 0);
+  return m;
+}
 
 const priorityMeta = {
   low:    { label: 'Low',    bg: '#22B07D' },
   medium: { label: 'Medium', bg: '#F5A524' },
   high:   { label: 'High',   bg: '#EF4B4B' }
 };
+
+// ---------- Toast notifications ----------
+const toastContainer = document.getElementById('toastContainer');
+function showToast(message, type = 'success') {
+  const styles = {
+    success: { bg: '#22B07D', icon: '<path d="M20 6L9 17l-5-5"/>' },
+    error:   { bg: '#EF4B4B', icon: '<path d="M18 6L6 18M6 6l12 12"/>' },
+    info:    { bg: '#2F6FED', icon: '<path d="M12 16v-4M12 8h.01"/><circle cx="12" cy="12" r="9"/>' }
+  };
+  const s = styles[type] || styles.success;
+  const el = document.createElement('div');
+  el.className = 'toast-in flex items-center gap-2.5 bg-white border border-line shadow-lg rounded-lg pl-3 pr-4 py-2.5 text-sm font-medium text-ink';
+  el.innerHTML = `
+    <span class="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style="background:${s.bg}">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3">${s.icon}</svg>
+    </span>
+    <span>${escapeHtml(message)}</span>
+  `;
+  toastContainer.appendChild(el);
+  setTimeout(() => {
+    el.classList.remove('toast-in');
+    el.classList.add('toast-out');
+    setTimeout(() => el.remove(), 200);
+  }, 2800);
+}
+
+// ---------- Overdue helper ----------
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function isOverdue(task) {
+  if (task.completed || !task.dueDate) return false;
+  return new Date(task.dueDate) < startOfToday();
+}
 
 // ---------- Sidebar navigation ----------
 const pageTitles = { dashboard: 'Dashboard', tasks: 'Tasks', archive: 'Archive', settings: 'Settings' };
@@ -22,8 +64,8 @@ document.querySelectorAll('.navItem').forEach(btn => {
 function applyView() {
   document.querySelectorAll('.navItem').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
   document.getElementById('pageTitle').textContent = pageTitles[state.view];
-  document.getElementById('statCards').parentElement.querySelector('#statCards').style.display =
-    state.view === 'settings' ? 'none' : '';
+  document.getElementById('statCards').style.display = state.view === 'settings' ? 'none' : '';
+  document.getElementById('calendarPanel').style.display = state.view === 'settings' ? 'none' : '';
   document.getElementById('prioFilters').classList.toggle('hidden', state.view !== 'tasks');
   document.getElementById('prioFilters').classList.toggle('flex', state.view === 'tasks');
   document.getElementById('openAdd').classList.toggle('hidden', state.view === 'settings' || state.view === 'archive');
@@ -137,12 +179,11 @@ document.getElementById('detailEditBtn').addEventListener('click', () => {
   closeDetail();
   openModal(task);
 });
-document.getElementById('detailDeleteBtn').addEventListener('click', async () => {
+document.getElementById('detailDeleteBtn').addEventListener('click', () => {
   if (!detailTask) return;
-  if (!confirm('Xóa công việc này?')) return;
-  await fetch(`${API}/${detailTask._id}`, { method: 'DELETE' });
+  const id = detailTask._id;
   closeDetail();
-  loadTasks();
+  deleteTask(id);
 });
 
 // ---------- Modal ----------
@@ -181,8 +222,9 @@ form.addEventListener('submit', async e => {
   };
   if (!payload.title) return;
 
+  const isEdit = !!state.editingId;
   try {
-    if (state.editingId) {
+    if (isEdit) {
       await fetch(`${API}/${state.editingId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -196,9 +238,10 @@ form.addEventListener('submit', async e => {
       });
     }
     closeModal();
+    showToast(isEdit ? 'Đã cập nhật công việc' : 'Đã thêm công việc', 'success');
     loadTasks();
   } catch (err) {
-    alert('Có lỗi xảy ra: ' + err.message);
+    showToast('Có lỗi xảy ra: ' + err.message, 'error');
   }
 });
 
@@ -218,6 +261,7 @@ async function loadTasks() {
     console.error('Lỗi tải công việc:', err);
   }
   loadStats();
+  loadCalendar();
 }
 
 async function loadStats() {
@@ -262,6 +306,101 @@ function renderStatCards(s) {
   `).join('');
 }
 
+// ---------- Calendar ----------
+document.getElementById('calPrev').addEventListener('click', () => {
+  state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth() - 1, 1);
+  loadCalendar();
+});
+document.getElementById('calNext').addEventListener('click', () => {
+  state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth() + 1, 1);
+  loadCalendar();
+});
+
+async function loadCalendar() {
+  try {
+    const res = await fetch(API); // toàn bộ task, không lọc theo view hiện tại
+    const tasks = await res.json();
+    renderCalendarGrid(tasks);
+    renderAgenda(tasks);
+  } catch (err) {
+    console.error('Lỗi tải lịch:', err);
+  }
+}
+
+function renderCalendarGrid(tasks) {
+  const monthStart = state.calMonth;
+  const label = monthStart.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
+  document.getElementById('calMonthLabel').textContent = label.charAt(0).toUpperCase() + label.slice(1);
+
+  // Map ngày -> trạng thái bận rộn nhất trong ngày đó (quá hạn > đang làm > hoàn thành)
+  const dayMap = {};
+  tasks.forEach(t => {
+    if (!t.dueDate) return;
+    const d = new Date(t.dueDate);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const kind = t.completed ? 'done' : (isOverdue(t) ? 'overdue' : 'doing');
+    const rank = { done: 1, doing: 2, overdue: 3 };
+    if (!dayMap[key] || rank[kind] > rank[dayMap[key]]) dayMap[key] = kind;
+  });
+  const dotColor = { overdue: '#EF4B4B', doing: '#F5A524', done: '#22B07D' };
+
+  const today = startOfToday();
+  const firstDow = (monthStart.getDay() + 6) % 7; // Thứ 2 = 0 ... Chủ nhật = 6
+  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push('<div></div>');
+  for (let day = 1; day <= daysInMonth; day++) {
+    const cellDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
+    const key = `${cellDate.getFullYear()}-${cellDate.getMonth()}-${cellDate.getDate()}`;
+    const kind = dayMap[key];
+    const isToday = cellDate.getTime() === today.getTime();
+    cells.push(`
+      <div class="relative flex items-center justify-center h-7 rounded-md ${isToday ? 'bg-primary text-white font-semibold' : 'text-ink'}">
+        ${day}
+        ${kind ? `<span class="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style="background:${isToday ? '#fff' : dotColor[kind]}"></span>` : ''}
+      </div>
+    `);
+  }
+  document.getElementById('calGrid').innerHTML = cells.join('');
+}
+
+function renderAgenda(tasks) {
+  const today = startOfToday();
+  const pending = tasks.filter(t => !t.completed);
+
+  const overdue = pending.filter(t => isOverdue(t))
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+  const upcoming = pending.filter(t => !isOverdue(t) && t.dueDate)
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+    .slice(0, 6);
+
+  const agendaItem = t => `
+    <button data-id="${t._id}" class="agendaItem w-full flex items-center gap-2 text-left hover:bg-canvas rounded-md px-1.5 py-1 -mx-1.5 transition-colors">
+      <span class="flex-1 truncate text-xs ${isOverdue(t) ? 'text-high font-medium' : 'text-ink'}">${escapeHtml(t.title)}</span>
+      <span class="shrink-0 text-[11px] text-muted">${formatDate(t.dueDate)}</span>
+    </button>
+  `;
+
+  const overdueList = document.getElementById('overdueList');
+  const upcomingList = document.getElementById('upcomingList');
+  overdueList.innerHTML = overdue.length
+    ? overdue.map(agendaItem).join('')
+    : '<p class="text-xs text-muted">Không có việc quá hạn 🎉</p>';
+  upcomingList.innerHTML = upcoming.length
+    ? upcoming.map(agendaItem).join('')
+    : '<p class="text-xs text-muted">Không có hạn chót sắp tới</p>';
+
+  [overdueList, upcomingList].forEach(container => {
+    container.querySelectorAll('.agendaItem').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const task = tasks.find(t => t._id === btn.dataset.id);
+        if (task) openDetail(task);
+      });
+    });
+  });
+}
+
 // ---------- Rendering task rows ----------
 function renderTasks(tasks) {
   const list = document.getElementById('taskList');
@@ -279,6 +418,7 @@ function renderTasks(tasks) {
 
 function renderRow(task) {
   const meta = priorityMeta[task.priority] || priorityMeta.medium;
+  const overdue = isOverdue(task);
   const row = document.createElement('div');
   row.className = 'flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-3 fade-in cursor-pointer hover:bg-canvas/60 rounded-lg px-1 -mx-1 transition-colors';
 
@@ -292,6 +432,10 @@ function renderRow(task) {
       ${task.description ? `<p class="text-xs text-muted truncate">${escapeHtml(task.description)}</p>` : ''}
     </div>
     <div class="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
+      ${overdue ? `<span class="text-[11px] font-semibold text-white px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap bg-high flex items-center gap-1">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M12 8v4M12 16h.01"/><circle cx="12" cy="12" r="9"/></svg>
+        Quá hạn
+      </span>` : ''}
       <span class="text-[11px] font-semibold text-white px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap" style="background:${meta.bg}">${meta.label}</span>
       <button class="editBtn text-muted hover:text-primary p-1.5">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
@@ -318,13 +462,24 @@ function escapeHtml(str) {
 
 // ---------- Actions ----------
 async function toggleTask(id) {
-  await fetch(`${API}/${id}/toggle`, { method: 'PATCH' });
-  loadTasks();
+  try {
+    const res = await fetch(`${API}/${id}/toggle`, { method: 'PATCH' });
+    const task = await res.json();
+    showToast(task.completed ? 'Đã hoàn thành công việc' : 'Đã chuyển về đang làm', task.completed ? 'success' : 'info');
+    loadTasks();
+  } catch (err) {
+    showToast('Có lỗi khi cập nhật', 'error');
+  }
 }
 async function deleteTask(id) {
   if (!confirm('Xóa công việc này?')) return;
-  await fetch(`${API}/${id}`, { method: 'DELETE' });
-  loadTasks();
+  try {
+    await fetch(`${API}/${id}`, { method: 'DELETE' });
+    showToast('Đã xóa công việc', 'info');
+    loadTasks();
+  } catch (err) {
+    showToast('Có lỗi khi xóa', 'error');
+  }
 }
 
 // ---------- Init ----------
