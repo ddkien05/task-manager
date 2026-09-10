@@ -1,85 +1,130 @@
-# Phiếu Việc — Task Manager (Node.js + Express + MongoDB + Docker)
+# 📋 Task Manager
 
-Ứng dụng quản lý công việc CRUD đơn giản, dùng cho bài tập lớn "Triển khai ứng dụng container trên cloud".
+Ứng dụng quản lý công việc được xây dựng bằng **Node.js, Express.js và MongoDB**, sau đó được đóng gói bằng **Docker** và triển khai trên **AWS EC2**.
 
-## Cấu trúc dự án
+## 🛠️ Công nghệ
 
-```
+* Node.js 18
+* Express.js
+* MongoDB 6.0
+* Mongoose
+* Docker
+* Docker Compose
+* Docker Volume
+* AWS EC2
+
+## 📁 Cấu trúc chính
+
+```text
 task-manager/
 ├── src/
-│   ├── public/          # Giao diện (HTML/CSS/JS + Tailwind qua CDN)
-│   │   ├── index.html
-│   │   └── app.js
-│   ├── models/
-│   │   └── Task.js      # Mongoose schema
-│   ├── routes/
-│   │   └── tasks.js     # REST API CRUD
-│   └── server.js        # Điểm khởi chạy Express
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .dockerignore
-├── .env.example
-└── package.json
+├── package.json
+└── README.md
 ```
 
-## Chạy local (không dùng Docker)
+## 🔌 REST API
 
-Yêu cầu: Node.js >= 18, MongoDB chạy sẵn ở `localhost:27017` (hoặc dùng MongoDB Atlas).
+| Method | Endpoint                | Chức năng           |
+| ------ | ----------------------- | ------------------- |
+| GET    | `/api/tasks`            | Lấy danh sách Task  |
+| GET    | `/api/tasks/stats`      | Lấy thống kê        |
+| POST   | `/api/tasks`            | Tạo Task            |
+| PUT    | `/api/tasks/:id`        | Cập nhật Task       |
+| PATCH  | `/api/tasks/:id/toggle` | Đổi trạng thái Task |
+| DELETE | `/api/tasks/:id`        | Xóa Task            |
+
+## 🐳 Docker
+
+### Dockerfile
+
+Dockerfile sử dụng Node.js 18 Alpine để đóng gói ứng dụng:
+
+```dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install --production
+
+COPY src ./src
+
+EXPOSE 3000
+
+CMD ["node", "src/server.js"]
+```
+
+### Docker Compose
+
+Hệ thống gồm 2 container:
+
+* `task-manager-web`: chạy ứng dụng Node.js.
+* `task-manager-db`: chạy MongoDB 6.0.
+
+Web sử dụng port `80` và kết nối MongoDB:
+
+```text
+mongodb://db:27017/taskdb
+```
+
+MongoDB sử dụng Docker Volume:
+
+```text
+mongo-data:/data/db
+```
+
+giúp dữ liệu không bị mất khi container được restart.
+
+## 🚀 Chạy ứng dụng
 
 ```bash
-npm install
-cp .env.example .env
-npm run dev      # cần cài nodemon, hoặc dùng: npm start
+docker compose up -d --build
 ```
 
-Mở trình duyệt: http://localhost:3000
+Kiểm tra:
 
-## Chạy bằng Docker Compose (khuyến nghị cho demo)
-
-```bash
-docker-compose up -d --build
-```
-
-- Web app: http://localhost (cổng 80 → container port 3000)
-- MongoDB: cổng 27017, dữ liệu lưu ở Docker Volume `mongo-data`
-
-Kiểm tra container đang chạy:
 ```bash
 docker ps
-docker stats          # đo CPU/RAM cho phần báo cáo hiệu năng
 ```
 
-Kiểm thử tính bền vững dữ liệu (persistence):
-```bash
-docker-compose stop db
-docker-compose start db
-# → dữ liệu công việc vẫn còn nguyên nhờ volume mongo-data
+Truy cập:
+
+```text
+http://localhost
 ```
 
-Dừng và xoá container (giữ lại volume):
-```bash
-docker-compose down
+## ☁️ AWS EC2
+
+Ứng dụng được triển khai trên **AWS EC2** bằng Docker Compose.
+
+```text
+Dockerfile
+    ↓
+Docker Image
+    ↓
+Docker Compose
+    ↓
+AWS EC2
+    ↓
+Public IP
+    ↓
+Task Manager Web
 ```
 
-## API endpoints
+## 🧪 Demo
 
-| Method | Endpoint                | Mô tả                              |
-|--------|--------------------------|-------------------------------------|
-| GET    | /api/tasks               | Lấy danh sách (lọc: priority, status, q) |
-| GET    | /api/tasks/stats         | Thống kê tổng/đang làm/hoàn thành   |
-| POST   | /api/tasks                | Tạo công việc mới                  |
-| PUT    | /api/tasks/:id            | Cập nhật công việc                 |
-| PATCH  | /api/tasks/:id/toggle     | Đánh dấu hoàn thành / chưa hoàn thành |
-| DELETE | /api/tasks/:id            | Xóa công việc                      |
+1. `docker images`
+2. `docker ps`
+3. Truy cập Public IP
+4. Tạo Task
+5. Restart MongoDB
+6. Refresh và kiểm tra dữ liệu
+7. `docker stats`
 
-## Triển khai lên Cloud VM (AWS EC2 / Oracle Cloud)
+## 📌 Repository
 
-```bash
-# Trên VM Ubuntu, sau khi cài Docker + Docker Compose:
-git clone <repo-url>
-cd task-manager
-docker-compose up -d --build
-```
-
-Nhớ mở port 80 (HTTP) và 22 (SSH) trong Security Group.
-# Task-Manager
+GitHub: https://github.com/ddkien05/task-manager
